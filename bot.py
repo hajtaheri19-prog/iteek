@@ -1,36 +1,63 @@
 import os
-from dotenv import load_dotenv
-from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+from flask import Flask, request
+from telegram import Update, KeyboardButton, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from dotenv import load_dotenv
 
-# بارگذاری متغیرها از فایل .env
 load_dotenv()
+
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
-# تعیین URL وب‌اپ (تَب‌دیلا Mini App)
-WEBAPP_URL = "https://epic-calm-reports-d9f9cb01.base44.app"
+app = Flask(__name__)
 
+# --- /start Command ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # دکمه کنار کادر تایپ
-    reply_keyboard = [[{"text": "📝 ثبت گزارش کار", "web_app": {"url": WEBAPP_URL}}]]
+    chat_id = update.effective_chat.id
 
-    # دکمه زیر پیام
-    inline_keyboard = [
-        [InlineKeyboardButton("📝 ثبت گزارش کار", web_app=WebAppInfo(url=WEBAPP_URL))]
-    ]
+    # Inline button linking to Mini‑App (Base44)
+    inline_button = InlineKeyboardButton(
+        "ثبت گزارش کار", web_app={"url": "https://epic-calm-reports-d9f9cb01.base44.app"}
+    )
+    inline_markup = InlineKeyboardMarkup([[inline_button]])
 
-    await update.message.reply_text(
-        "سلام 👋 خوش آمدی 🌿\nبرای ثبت گزارش روزانه روی یکی از دکمه‌ها کلیک کن.",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard)
+    # Reply (persistent) button linking to Mini‑App
+    reply_button = KeyboardButton(
+        "ثبت گزارش کار", web_app={"url": "https://epic-calm-reports-d9f9cb01.base44.app"}
+    )
+    reply_markup = ReplyKeyboardMarkup([[reply_button]], resize_keyboard=True)
+
+    # Welcome message
+    welcome_text = (
+        "سلام 👋 خوش اومدی به ربات آی‌تاب 🌿\n"
+        "از اینجا می‌تونی گزارش روزانه‌ات رو در Mini App وارد کنی."
     )
 
-    await update.message.reply_text(
-        "برای شروع گزارش روی دکمه زیر کلیک کن:",
-        reply_markup=ReplyKeyboardMarkup(reply_keyboard, resize_keyboard=True)
+    await context.bot.send_message(
+        chat_id=chat_id, text=welcome_text, reply_markup=inline_markup
     )
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text="برای راحتی، می‌تونی از دکمه پایین هم به فرم گزارش کار وارد بشی.",
+        reply_markup=reply_markup,
+    )
+
+# --- Telegram Application ---
+application = ApplicationBuilder().token(TOKEN).build()
+application.add_handler(CommandHandler("start", start))
+
+# --- Flask routes for Webhook ---
+@app.route(f"/{TOKEN}", methods=["POST"])
+def telegram_webhook():
+    data = request.get_json(force=True)
+    update = Update.de_json(data, application.bot)
+    application.update_queue.put(update)
+    return "ok"
+
+@app.route("/", methods=["GET"])
+def home():
+    return "AiTab Bot running successfully 🌿"
 
 if __name__ == "__main__":
-    app = ApplicationBuilder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    print("🚀 Tabdila Bot started and listening...")
-    app.run_polling()
+    application.bot.set_webhook(f"{WEBHOOK_URL}/{TOKEN}")
+    app.run(host="0.0.0.0", port=10000)
