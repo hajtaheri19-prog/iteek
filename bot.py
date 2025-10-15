@@ -1,57 +1,69 @@
 import os
 from flask import Flask, request
-from telegram import Update, KeyboardButton, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram import (
+    Update,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Bot
+)
+from telegram.ext import Application, CommandHandler, ContextTypes
 from dotenv import load_dotenv
 
+# --- Load environment variables ---
 load_dotenv()
-
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+MINIAPP_URL = "https://epic-calm-reports-d9f9cb01.base44.app"
 
+bot = Bot(token=TOKEN)
 app = Flask(__name__)
+
+# ساختن Application بدون Updater (سازگار با Python 3.13)
+application = Application(bot=bot)
 
 # --- /start Command ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
 
-    # Inline button linking to Mini‑App (Base44)
+    # دکمه داخل پیام (Inline)
     inline_button = InlineKeyboardButton(
-        "ثبت گزارش کار", web_app={"url": "https://epic-calm-reports-d9f9cb01.base44.app"}
+        "🔹 ثبت گزارش کار",
+        web_app={"url": MINIAPP_URL}
     )
     inline_markup = InlineKeyboardMarkup([[inline_button]])
 
-    # Reply (persistent) button linking to Mini‑App
-    reply_button = KeyboardButton(
-        "ثبت گزارش کار", web_app={"url": "https://epic-calm-reports-d9f9cb01.base44.app"}
+    # دکمه دائمی پایین کادر تایپ (Reply Keyboard)
+    open_app_button = KeyboardButton(
+        "🔹 باز کردن Mini App",
+        web_app={"url": MINIAPP_URL}
     )
-    reply_markup = ReplyKeyboardMarkup([[reply_button]], resize_keyboard=True)
+    reply_markup = ReplyKeyboardMarkup(
+        [[open_app_button]], resize_keyboard=True, one_time_keyboard=False
+    )
 
-    # Welcome message
     welcome_text = (
         "سلام 👋 خوش اومدی به ربات آی‌تاب 🌿\n"
         "از اینجا می‌تونی گزارش روزانه‌ات رو در Mini App وارد کنی."
     )
 
-    await context.bot.send_message(
-        chat_id=chat_id, text=welcome_text, reply_markup=inline_markup
-    )
-    await context.bot.send_message(
+    # ارسال پیام خوش‌آمد با هر دو نوع دکمه
+    await bot.send_message(chat_id=chat_id, text=welcome_text, reply_markup=inline_markup)
+    await bot.send_message(
         chat_id=chat_id,
-        text="برای راحتی، می‌تونی از دکمه پایین هم به فرم گزارش کار وارد بشی.",
-        reply_markup=reply_markup,
+        text="برای ورود سریع، روی دکمه کنار کادر تایپ بزن 👇",
+        reply_markup=reply_markup
     )
 
-# --- Telegram Application ---
-application = ApplicationBuilder().token(TOKEN).build()
 application.add_handler(CommandHandler("start", start))
 
-# --- Flask routes for Webhook ---
+# --- Flask Webhook routes ---
 @app.route(f"/{TOKEN}", methods=["POST"])
 def telegram_webhook():
     data = request.get_json(force=True)
-    update = Update.de_json(data, application.bot)
-    application.update_queue.put(update)
+    update = Update.de_json(data, bot)
+    application.create_task(application.process_update(update))
     return "ok"
 
 @app.route("/", methods=["GET"])
@@ -59,5 +71,6 @@ def home():
     return "AiTab Bot running successfully 🌿"
 
 if __name__ == "__main__":
-    application.bot.set_webhook(f"{WEBHOOK_URL}/{TOKEN}")
+    bot.delete_webhook()  # حذف وب‌هوک قبلی در صورت وجود
+    bot.set_webhook(f"{WEBHOOK_URL}/{TOKEN}")
     app.run(host="0.0.0.0", port=10000)
